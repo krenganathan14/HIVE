@@ -1,0 +1,577 @@
+/*
+
+AIM 	   :Hive Additional Use Cases_1 Performing DML statements in Hive
+DATE	   :10-MAR-2018
+PreRequest :hive-1.2.2/ RHEL Operation system and MYSQL.
+
+*/
+------------------------------------------
+
+Click here to download the data files for the usecases given below (File names :custpayments_ORIG.sql , payments )
+
+Question is , 
+
+can we do DML using hive as HDFS does not support changes??
+
+1.Create HiveTest table with DML support 
+
+create table empdml (EmployeeID Int,FirstName String,Designation String, Salary Int,Department String) 
+clustered by (department) into 3 buckets stored as orc 
+TBLPROPERTIES ('transactional'='true'); 
+
+2. Insert
+insert into table empdml values(1,'Rohit','MD',88000,'Development'); 
+
+insert into table empdml values(2,'Arun','NJ',75000,'Testing'); 
+
+
+3. Select 
+SELECT * FROM empdml;
+
+4. Update
+update empdml set salary = 100000 where employeeid = 1; 
+
+
+5. Delete
+delete from empdml where employeeid=2; 
+
+Note: Except select query - MR is required for executing the Insert/Update/Delete queries.
+-----------------------------------------------------------------------
+ETL Using Hive Queries and functions
+
+Hive can do ETL and ELT, lets explore how can we achieve several business logics in hive by loading staging tables, de-normalized tables 
+with joins, concatenation, summation, aggregations, analytical queries etc.,
+
+Create a database called custdb.
+Go inside custdb.
+Create the below table in custdb and load customer data
+
+Create database custdb;
+use cusdb;
+
+create table customer(custno string, firstname string, lastname string, age int,profession string)
+row format delimited fields terminated by ','; 
+
+
+load data local inpath '/home/hduser/hive/data/custs' into table customer; 
+
+see only firstname of the customer from hadoop direclty without query?
+hadoop fs -cat /user/hive/warehouse/custdb.db/customer/* | awk -F',' '{print $2}'
+
+
+Create cust transaction table and load the customer and transaction data by joining the 2 tables located in multiple databases such as retail and custdb prefixing 
+schema name, here we are denormalising the tables into a single fat table with added ETL operations and strored as external table:
+
+create external table cust_trxn (custno int,fullname string,age int,profession string,amount double,product string,spendby string,agecat varchar(100),modifiedamout float) 
+row format delimited fields terminated by ',' location '/user/hduser/custtxns';
+
+insert into table cust_trxn 
+select a.custno,upper(concat(a.firstname,a.lastname)),a.age,a.profession,b.amount,b.product,b.spendby,
+case when age<30 then 'low' 
+when age>=30 and age < 50 then 'middle'
+when age>=50 then 'old'
+else 'others' end as agecat,
+case when spendby= 'credit' then b.amount+(b.amount*0.05) else b.amount end as modifiedamount
+from custdb.customer a JOIN retail.txnrecords b
+ON a.custno = b.custno; 
+
+select * from cust_trxn limit 10;
+
+select * from retail.txnrecords limit 10;
+
+Creating aggregation tables that will be considered as cube and used for quick reporting purposes:
+
+Here we are creating a sequence number or a surrogate key column using olap functions like rownumber over and aggregating 
+the age and amount in multiple dimensions with the addition of current_date also.
+
+create external table cust_trxn_aggr (seqno int,product string,profession string,level string,sumamt double, avgamount double,maxamt double,avgage int,currentdate date)
+row format delimited fields terminated by ',';
+
+
+insert overwrite table cust_trxn_aggr
+select row_number() over(),product,profession, agecat, sum(amount),avg(amount),max(amount),avg(age),current_date()
+from cust_trxn group by product,profession, agecat, current_date(); 
+
+select * from cust_trxn_aggr;
+
+---------------------------------------------------------------
+
+Benchmarking Hive using different file format storage: 
+
+The purpose of doing benchmarking is to identify the best functionality or the feature to be used by iterating with different options, here we are going to create textfile,
+orc and parquet format tables to check the performance between all these tables and the data size it occupied.
+
+--Create staging_txn table
+create table staging_txn(txnno INT, txndate STRING, custno INT, amount DOUBLE,category STRING, product STRING, city STRING, state STRING, spendby STRING) 
+row format delimited fields terminated by ',' stored as textfile
+location '/user/hduser/hiveexternaldata'; 
+
+--Create staging_txn table
+create table staging_txn(txnno INT, txndate STRING, custno INT, amount DOUBLE, category STRING, product STRING, city STRING, state STRING, spendby STRING) 
+row format delimited fields terminated by ',' lines terminated by '\n' 
+stored as textfile; 
+
+--Load data inot staging_txn table
+LOAD DATA LOCAL INPATH '/home/hduser/hive/data/txns' OVERWRITE INTO TABLE staging_txn; 
+
+--Create txn_parquet table
+create table txn_parquet(txnno INT, txndate STRING, custno INT, amount DOUBLE,category STRING, product STRING, city STRING, state STRING, spendby STRING) 
+row format delimited fields terminated by ',' lines terminated by '\n'
+stored as parquetfile; 
+
+--Load data inot txn_parquet table
+Insert into table txn_parquet select txnno,txndate,custno,amount,category, product,city,state,spendby from staging_txn; 
+
+--Time taken: 24.458 seconds
+
+----Create txn_orc table
+create table txn_orc(txnno INT, txndate STRING, custno INT, amount DOUBLE, category STRING, product STRING, city STRING, state STRING, spendby STRING) 
+row format delimited fields terminated by ',' lines terminated by '\n' 
+stored as orcfile; 
+
+--Load data inot txn_orc table
+Insert into table txn_orc select txnno,txndate,custno,amount,category, product,city,state,spendby from staging_txn; 
+
+--Time taken: 23.718 seconds
+
+
+select count(txnno),category from staging_txn group by category; 
+--Time taken: 31.286 seconds, Fetched: 15 row(s)
+
+select count(txnno),category from txn_orc group by category; 
+--Time taken: 30.976 seconds, Fetched: 15 row(s)
+
+select count(txnno),category from txn_parquet group by category; 
+--Time taken: 32.182 seconds, Fetched: 15 row(s)
+------------------------------------------------------------------------------------------
+different file format storage comparition:
+
+--textfile
+$hadoop fs -du -h /user/hduser/hiveexternaldata/*
+8.1 M  /user/hduser/hiveexternaldata/txns
+
+--parquetfile
+$hadoop fs -du -h /user/hive/warehouse/custdb.db/txn_parquet/*
+1.3 M  /user/hive/warehouse/custdb.db/txn_parquet/000000_0
+
+--orcfile
+$hadoop fs -du -h /user/hive/warehouse/custdb.db/txn_orc/*
+943.5 K  /user/hive/warehouse/custdb.db/txn_orc/000000_0
+
+8.1 MB data store as following in hadoop system if we different file format storage(Internally Serdes operations):
+--textfile    :8.1 M
+--parquetfile :1.3 M
+--orcfile 	  :943.5 K
+
+-----------------------------------------------------------------------------------------
+
+Hive Sqoop Integration usecases: 
+
+1. Start mysql service
+
+2. Login to mysql using root
+
+3. Execute the sql file given below in Mysql to load the customer data
+
+Note: The required files are attached in the links provided in the top of this page:
+
+source /home/hduser/custpayments_ORIG.sql
+
+4. Write sqoop command to import data from customers and products table with 2 mappers, with enclosed by " (As we have ',' 
+in the data itself we are importing in sqoop using enclosed by option).
+
+sqoop import --connect jdbc:mysql://localhost/custpayments --username root --password root \
+-table customers \
+-m 2 \
+--split-by customernumber \
+--target-dir /user/hduser/custdata/ \
+--delete-target-dir \
+--enclosed-by '\"';
+
+--enclosed-by '\"'
+
+
+5. Create a hive external table and load the sqoop imported data to the hive table called custmaster. As we have ',' in the 
+data itself we are using quotedchar option below with the csv serde option as given below as example, create the table with all columns.
+
+create external table custmaster (customerNumber int,customername string,contactlastname string,contactfirstname string)
+ROW FORMAT SERDE 'org.apache.hadoop.hive.serde2.OpenCSVSerde'
+WITH SERDEPROPERTIES (
+"separatorChar" = ",",
+"quoteChar" = "\"") 
+LOCATION '/user/hduser/custdata/';
+
+6. Copy the payments.txt into hdfs location /user/hduser/paymentsdata/
+hadoop fs -mkdir -p /user/hduser/paymentsdata
+hadoop fs -put payments.txt /user/hduser/paymentsdata
+
+
+7. Create an external table to point the imported payments data location /user/hduser/paymentsdata/.
+Ans:
+----
+create external table payments (custno int,prodname string,bdate varchar(100),amount double) 
+row format delimited fields terminated by ','
+LOCATION '/user/hduser/paymentsdata/';
+
+
+8. Create another external table called cust_payments in avro format and join the above 2 tables and load using insert select option.
+Ans:
+----
+create external table cust_payments (custno int,contactfirstname string,contactlastname string,amount double)
+row format delimited fields terminated by '~'
+stored as avro 
+location '/user/hduser/paymentsavro';
+
+insert into table cust_payments select a.customerNumber,a.contactfirstname string,a.contactfirstname,b.amount from custmaster a JOIN payments b ON a.customerNumber = b.custno; 
+
+
+9. Create a view called custpayments_vw to only display customernumber,concatenated contactfirst and contactlastname,creditlimit, amount.
+create view custpayments_vw as select custno,upper(concat(contactfirstname,' ',contactlastname),amount) from cust_payments;
+Ans:
+----
+CREATE VIEW IF NOT EXISTS custpayments_vw AS select custno,upper(concat(contactfirstname,' ',contactlastname)),amount from cust_payments;
+
+select * from custpayments_vw;
+---------------------------------------------------------------------
+*Hive Schema Evolution (Hive Dynamic schema):
+
+In the below usecase we can directly import the DB data using sqoop in avro format and create hive table 
+without defining the columns by using the avro schema file (avsc) created in the below step, 
+which helps hive create dynamic schema if we don’t know the schema upfront. 
+This is a very good feature to anlayse and has a good value in the interview if explained.
+--------------- Steps - Starts ---------------------------------------------------------------------------------------
+Import the Customer data into hdfs using sqoop import with 3 mappers into /user/hduser/custavro location.
+
+Download and copy to /home/hduser/ the avro jar (avro-tools-1.8.1.jar) from the below url (jar marked in red) 
+to extract the schema from the avro data imported in the above step.
+
+https://mvnrepository.com/artifact/org.apache.avro/avro-tools/1.8.1 
+
+Copy the customer.avsc (avro schema file extracted from the above step into /user/hduser/custavroschema location.
+
+Create a hive table to read the data from avro data location with the table properties mentioning the avsc location.
+
+Get the create table statement of the above table created.
+--------------- Steps - End ------------------------------------------------------------------------------------------
+Step:1
+-------
+sqoop import -Dmapreduce.job.user.classpath.first=true --connect jdbc:mysql://localhost/custpayments --username root --password root \
+-table customers \
+-m 3 \
+--split-by \
+customernumber \
+--target-dir /user/hduser/custavro \
+--delete-target-dir \
+--as-avrodatafile;
+
+Step:2
+-------
+Download and copy to /home/hduser/ the avro jar (avro-tools-1.8.1.jar) from the below url (jar marked in red) 
+to extract the schema from the avro data imported in the above step.
+
+Step:3
+-------
+hadoop jar avro-tools-1.8.1.jar getschema /user/hduser/custavro/part-m-00000.avro > /home/hduser/customer.avsc
+
+
+cat ~/customer.avsc
+
+Step:4
+-------
+hadoop fs -put -f customer.avsc /tmp/customer.avsc
+
+Step:5
+-------
+Hive Cli: *Here just we created table not a columns. it will automatcially created by .avsc schema
+create external table customeravro 
+stored as AVRO 
+location '/user/hduser/custavro' 
+TBLPROPERTIES('avro.schema.url'='hdfs:///tmp/customer.avsc');
+
+Verify:
+-------
+check how columns has got created:
+hive> show create table customeravro;
+OK
+CREATE EXTERNAL TABLE `customeravro`(
+  `customernumber` int COMMENT '',
+  `customername` string COMMENT '',
+  `contactlastname` string COMMENT '',
+  `contactfirstname` string COMMENT '',
+  `phone` string COMMENT '',
+  `addressline1` string COMMENT '',
+  `addressline2` string COMMENT '',
+  `city` string COMMENT '',
+  `state` string COMMENT '',
+  `postalcode` string COMMENT '',
+  `country` string COMMENT '',
+  `salesrepemployeenumber` int COMMENT '',
+  `creditlimit` string COMMENT '')
+ROW FORMAT SERDE
+  'org.apache.hadoop.hive.serde2.avro.AvroSerDe'
+STORED AS INPUTFORMAT
+  'org.apache.hadoop.hive.ql.io.avro.AvroContainerInputFormat'
+OUTPUTFORMAT
+  'org.apache.hadoop.hive.ql.io.avro.AvroContainerOutputFormat'
+LOCATION
+  'hdfs://localhost:54310/user/hduser/custavro'
+TBLPROPERTIES (
+  'COLUMN_STATS_ACCURATE'='false',
+  'avro.schema.url'='hdfs:///tmp/customer.avsc',
+  'numFiles'='0',
+  'numRows'='-1',
+  'rawDataSize'='-1',
+  'totalSize'='0',
+  'transient_lastDdlTime'='1599533269')
+Time taken: 0.09 seconds, Fetched: 30 row(s)
+
+hive> describe customeravro;
+OK
+customernumber          int
+customername            string
+contactlastname         string
+contactfirstname        string
+phone                   string
+addressline1            string
+addressline2            string
+city                    string
+state                   string
+postalcode              string
+country                 string
+salesrepemployeenumber  int
+creditlimit             string
+
+
+-----------------------------------------------------------------------------------------------------------------
+
+Slowly Changing Dimension implementation in Hive invoking data using Sqoop:
+A Slowly Changing Dimension (SCD) is a dimension that stores and manages both current and historical data over time in a data warehouse. 
+It is considered and implemented as one of the most critical ETL tasks in tracking the history of dimension records.
+Source Data readiness:
+Step:1
+-------
+mysql -u root -p
+
+password: root
+
+mysql
+
+create database stock;
+
+use stock;
+
+create table stockexchange(id integer,exchang varchar(100),company varchar(100),dt date,value float(10,3));
+
+insert into stock.stockexchange values(1,'NYSE','CLI','2019-01-01',35.39),(2,'NYSE','WAG','2019-01-01',24.39),(3,'NYSE','WMT','2019-01-01',145.31),(4,'NYSE','INT','2019-01-01',288.19);
+
+Step:2
+-------
+sqoop import --connect jdbc:mysql://localhost/stock --username root --password root \
+--query "select id,exchang,company,value from stockexchange where dt>='2019-01-01' and \$CONDITIONS"  \
+--hive-import \
+--hive-overwrite \
+--hive-table stock.managed_stockexchange \
+-m 1 \
+--fields-terminated-by ',' \
+--delete-target-dir \
+--target-dir /user/hduser/stockexchange;
+
+Error:
+ ERROR tool.ImportTool: Encountered IOException running import job: java.io.IOException: Hive exited with status 88
+        at org.apache.sqoop.hive.HiveImport.executeExternalHiveScript(HiveImport.java:389)
+        at org.apache.sqoop.hive.HiveImport.executeScript(HiveImport.java:339)
+        at org.apache.sqoop.hive.HiveImport.importTable(HiveImport.java:240)
+        at org.apache.sqoop.tool.ImportTool.importTable(ImportTool.java:514)
+        at org.apache.sqoop.tool.ImportTool.run(ImportTool.java:605)
+        at org.apache.sqoop.Sqoop.run(Sqoop.java:143)
+        at org.apache.hadoop.util.ToolRunner.run(ToolRunner.java:70)
+        at org.apache.sqoop.Sqoop.runSqoop(Sqoop.java:179)
+        at org.apache.sqoop.Sqoop.runTool(Sqoop.java:218)
+        at org.apache.sqoop.Sqoop.runTool(Sqoop.java:227)
+        at org.apache.sqoop.Sqoop.main(Sqoop.java:236)
+
+* Resolve this create Hive database and tables as below from Hive Cli:
+
+Step:3
+-------
+hive> create database stock;
+
+use stock;
+
+drop table ext_stockexchange;
+
+create table stock.ext_stockexchange (id int,ver int,exchang string,company string,value double)
+row format delimited fields terminated by ','
+location '/user/hduser/stockexchangedata';
+
+Step:4
+-------
+sqoop import --connect jdbc:mysql://localhost/stock --username root --password root \
+--query "select id,exchang,company,value from stockexchange where dt>='2019-01-01' and \$CONDITIONS"  \
+--hive-import \
+--hive-overwrite \
+--hive-table stock.managed_stockexchange \
+-m 1 \
+--fields-terminated-by ',' \
+--delete-target-dir \
+--target-dir /user/hduser/stockexchange;
+
+Output:
+HiveImport: OK
+20/09/08 08:43:18 INFO hive.HiveImport: Time taken: 0.76 seconds
+20/09/08 08:43:18 INFO hive.HiveImport: Loading data to table stock.managed_stockexchange
+20/09/08 08:43:18 INFO hive.HiveImport: Table stock.managed_stockexchange stats: [numFiles=1, numRows=0, totalSize=70, rawDataSize=0]
+20/09/08 08:43:18 INFO hive.HiveImport: OK
+20/09/08 08:43:18 INFO hive.HiveImport: Time taken: 0.445 seconds
+20/09/08 08:43:18 INFO hive.HiveImport: Hive import complete.
+20/09/08 08:43:18 INFO hive.HiveImport: Export directory is contains the _SUCCESS file only, removing the directory.
+
+Step:5
+-------
+hive> select * from stock.managed_stockexchange;
+
+
+--------------------------------------------------------------------------------------------------------------------------------------
+
+Type 1 SCDs - Overwriting:
+--------------------------
+
+hive
+
+insert into table ext_stockexchange select * from ext_stockexchange where id not in (select id from managed_stockexchange) union select id,1,exchang,company,value from stock.managed_stockexchange;
+
+output:
+hive> select * from ext_stockexchange;
+OK
+1       1       NYSE    CLI     35.39
+2       1       NYSE    WAG     24.39
+3       1       NYSE    WMT     145.31
+4       1       NYSE    INT     288.19
+
+
+mysql
+
+insert into stock.stockexchange values(3,'NYSE','WMT','2019-01-03',147.51),(4,'NYSE','INT','2019-01-04',283.77);
+
+sqoop import --connect jdbc:mysql://localhost/stock --username root --password root \
+--query "select id,exchang,company,value from stockexchange where dt>='2019-01-02' and \$CONDITIONS" \
+--hive-import \
+--hive-overwrite \
+--hive-table stock.managed_stockexchange \
+-m 1 \
+--fields-terminated-by ',' \
+--target-dir /user/hduser/stockexchange;
+
+select a.* from ext_stockexchange a left outer join managed_stockexchange b on a.id =b.id 
+where b.id is null union select id,1,exchang,company,value from stock.managed_stockexchange;
+
+Output:
+OK
+1       1       NYSE    CLI     35.39
+2       1       NYSE    WAG     24.39
+3       1       NYSE    WMT     147.51
+4       1       NYSE    INT     283.77
+
+
+insert overwrite table ext_stockexchange select * from ext_stockexchange 
+where id not in (select id from managed_stockexchange) union select id,1,exchang,company,value from stock.managed_stockexchange;
+
+output:
+hive> select * from ext_stockexchange;
+OK
+1       1       NYSE    CLI     35.39
+2       1       NYSE    WAG     24.39
+3       1       NYSE    WMT     147.51
+4       1       NYSE    INT     283.77
+
+
+
+Type 2 SCDs - Creating another dimension record:
+------------------------------------------------
+
+sqoop import --connect jdbc:mysql://localhost/stock --username root --password root 
+--query "select id,exchang,company,value from stockexchange where dt>='2019-01-03' and \$CONDITIONS" 
+--hive-import 
+--hive-overwrite 
+--hive-table stock.managed_stockexchange 
+-m 1 
+--fields-terminated-by ',' 
+--target-dir /user/hduser/stockexchange
+
+mysql:
+
+insert into stock.stockexchange values(3,'NYSE','WMT','2019-01-04',157.81),(5,'NYSE','INT','2019-01-04',83.77);
+
+Hive:
+
+insert overwrite table ext_stockexchange
+
+select a.id,coalesce(b.ver1+row_number() over(partition by a.id),row_number() over(partition by a.id)) as ver,a.exchang,a.company,a.value from managed_stockexchange a
+
+left outer join (select id,max(ver) as ver1 from ext_stockexchange group by id) as b on a.id=b.id
+union
+select id,ver,exchang,company,value from ext_stockexchange;
+
+
+-----------------------------------------------------------------------------------------------------------------------------------------
+Hive Static Partition Load Automation script:
+
+Create some sample data in the /home/hduser/hivepart location as given below:
+
+cp /home/hduser/hive/data/txns /home/hduser/hivepart/txns_20181212_PADE
+
+cp /home/hduser/hive/data/txns /home/hduser/hivepart/txns_20181212_NY
+
+cp /home/hduser/hive/data/txns /home/hduser/hivepart/txns_20181213_PADE
+
+cp /home/hduser/hive/data/txns /home/hduser/hivepart/txns_20181213_NY
+
+Create table txnrecsbycatdtreg_msqlmeta in hive cli:
+
+hive (retail)> create table txnrecsbycatdtreg_msqlmeta (txnno INT, txndate STRING, custno INT, amount DOUBLE, category STRING,product STRING, city STRING, state STRING, spendby STRING)
+	partitioned by (datadt date,region string)
+	row format delimited fields terminated by ','
+	stored as textfile;	
+
+
+Create a shell script namely hivepart_mysqlmetastore.ksh in the /home/hduser/hivepart location, 
+give execute permission and execute as bash hivepart.ksh /home/hduser/hivepart custdb.txnrecsbycatdtreg
+
+#!bin/bash
+#Script to create hive partition LOAD
+#bash hivepart_mysqlmetastore.ksh /home/hduser/hive/data txnrecsbycatdtreg_msqlmeta
+echo "$0(Korn Script Shell)  is starting..."
+rm -f /home/hduser/hive/data/partload.hql
+if [ $# -ne 2 ]
+   then
+      echo "$0 is required source data and table name."
+      exit 99;
+fi
+echo "Argument_1 passed As Path      : $1"
+echo "Argumetn_2 passed As TableName : $2"
+for fileinpath in $1/txns_*;
+do
+      #find file name from path
+      echo "File in path name is: $fileinpath"
+      filename=$(basename $fileinpath)
+      echo "File Name:$filename"
+      #find_date from file Name(txns_20181212_NY)
+      dt=`echo $filename |awk -F'_' '{print $2}'`
+      dtfmt=`date -d $dt +'%Y-%m-%d'`
+      echo "$dtfmt"
+      #find region
+      reg=`echo $filename |awk -F'_' '{print $3}'`
+      echo "$reg"
+      #Write load cmd into partload.hql file
+echo "LOAD DATA LOCAL INPATH '$1/$filename' OVERWRITE INTO TABLE $2 PARTITION (datadt='$dtfmt',region='$reg');">> /home/hduser/hive/data/partload.hql
+done
+#Below cp needed because now hive using default.db as metastore.So we need to copy .hql file into hive installed loacation
+#No need below line since we are using here mysql as metastore
+#cp /home/hduser/hive/data/partload.hql /home/hduser/partload.hql
+echo "Loading Hive table started"
+hive -f /home/hduser/partload.hql
+
+bash hivepart_mysqlmetastore.ksh /home/hduser/hive/data txnrecsbycatdtreg_msqlmeta
+Output: 
+
+
