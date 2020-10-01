@@ -54,7 +54,7 @@ Create database with standard format (PROD purpose):
  hive>  create database if not exists retail_tmp
 		comment 'retail database for holding retail cust info'
 		location '/user/hduser/hivestore'
-		with dbproperties ('Created by' = 'Inceptez', 'Created on' = '2020-09-03');
+		with dbproperties ('Created by' = 'Internal', 'Created on' = '2017-09-03');
 		describe database retail_tmp;
 
 hive>	describe database retail;
@@ -538,7 +538,7 @@ I. Create partitioned table :
 	
 In hadoop folders (Partitioning) will be looks like,
 
-[hduser@Inceptez ~]$ hadoop fs -ls /user/hive/warehouse/retail.db/txnrecsbycatdtreg/datadt=2018-12-12
+$ hadoop fs -ls /user/hive/warehouse/retail.db/txnrecsbycatdtreg/datadt=2018-12-12
 drwxrwxr-x   - hduser supergroup          0 2018-04-04 14:49 /user/hive/warehouse/retail.db/txnrecsbycatdtreg/datadt=2018-12-12/region=NY
 drwxrwxr-x   - hduser supergroup          0 2018-04-04 14:48 /user/hive/warehouse/retail.db/txnrecsbycatdtreg/datadt=2018-12-12/region=PADE
 
@@ -590,7 +590,7 @@ from txnrecords;
 
 In hadoop dynamic Partitioning(Floders) will be looks like as below for category ,
 
-[hduser@Inceptez ~]$ hadoop fs -ls /user/hduser/hiveexternaldata 
+$ hadoop fs -ls /user/hduser/hiveexternaldata 
 Found 15 items
 drwxr-xr-x   - hduser hadoop          0 2018-04-04 17:08 /user/hduser/hiveexternaldata/category=Air Sports
 drwxr-xr-x   - hduser hadoop          0 2018-04-04 17:08 /user/hduser/hiveexternaldata/category=Combat Sports
@@ -1115,10 +1115,10 @@ sqoop -Done with above Import data from sqoop directly to hive customer table cm
 
 
 Check: *On the fly everthing happend. No need to store in sqoop path(load data inpath)-CUT&PASTE. this import for hive so it has been removed after competed job.see logs lastline.
-	[hduser@Inceptez ~]$ hadoop fs -ls /user/hduser/customer/*
+	$ hadoop fs -ls /user/hduser/customer/*
 	ls: /user/hduser/customer/*: No such file or directory
 
-	[hduser@Inceptez ~]$ hadoop fs -ls /user/hive/warehouse/retail.db/customer_data/*
+	$ hadoop fs -ls /user/hive/warehouse/retail.db/customer_data/*
 	-rw-r--r--   1 hduser hadoop        436 2020-09-08 23:34 /user/hive/warehouse/retail.db/customer_data/part-m-00000
 	
 	UDF using Python code:
