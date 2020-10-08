@@ -1179,3 +1179,392 @@ hive (retail)> set hive.cli <tap>
 hive.cli.errors.ignore            hive.cli.pretty.output.num.cols   hive.cli.print.current.db         hive.cli.print.header             hive.cli.prompt
 hive.client.stats.counters        hive.client.stats.publishers
 ------------------------------
+------------------------------
+#Hive functions:
+
+[hduser@Inceptez data]$ cat payments.txt | head -50
+103,HQ336336,2016-10-19,6066.78
+103,JM555205,2016-10-05,14571.44
+103,OM314933,2016-10-18,1676.14
+112,BO864823,2016-10-17,14191.12
+112,HQ55022,2016-10-06,32641.98
+112,ND748579,2016-10-20,33347.88
+114,GG31455,2016-10-20,45864.03
+114,MA765515,2016-10-15,82261.22
+114,NP603840,2016-10-31,7565.08
+114,NR27552,2016-10-10,44894.74
+119,DB933704,2016-10-14,19501.82
+119,LN373447,2016-10-08,47924.19
+119,NG94694,2016-10-22,49523.67
+121,DB889831,2016-10-16,50218.95
+121,FD317790,2016-10-28,1491.38
+121,KI831359,2016-10-04,17876.32
+121,MA302151,2016-10-28,34638.14
+124,AE215433,2016-10-05,101244.59
+124,BG255406,2016-10-28,85410.87
+124,CQ287967,2016-10-11,11044.30
+124,ET64396,2016-10-16,83598.04
+124,HI366474,2016-10-27,47142.70
+124,HR86578,2016-10-02,55639.66
+124,KI131716,2016-10-15,111654.40
+124,LF217299,2016-10-26,43369.30
+124,NT141748,2016-10-25,45084.38
+128,DI925118,2016-10-28,10549.01
+128,FA465482,2016-10-18,24101.81
+128,FH668230,2016-10-24,33820.62
+128,IP383901,2016-10-18,7466.32
+129,DM826140,2016-10-08,26248.78
+129,ID449593,2016-10-11,23923.93
+129,PI42991,2016-10-09,16537.85
+131,CL442705,2016-10-12,22292.62
+131,MA724562,2016-10-02,50025.35
+131,NB445135,2016-10-11,35321.97
+141,AU364101,2016-10-19,36251.03
+141,DB583216,2016-10-01,36140.38
+141,DL460618,2016-10-19,46895.48
+141,HJ32686,2016-10-30,59830.55
+141,ID10962,2016-10-31,116208.40
+141,IN446258,2016-10-25,65071.26
+141,JE105477,2016-10-18,120166.58
+141,JN355280,2016-10-26,49539.37
+141,JN722010,2016-10-25,40206.20
+141,KT52578,2016-10-09,63843.55
+141,MC46946,2016-10-09,35420.74
+141,MF629602,2016-10-16,20009.53
+141,NU627706,2016-10-17,26155.91
+144,IR846303,2016-10-12,36005.71
+
+collection_set() --not allow duplicate[array of DISTINCT]
+collect_list()   --allow duplicate
+
+hive>create external table payment_master(cid int,pcode string,bdate string,amount double)
+row format delimited fields terminated by ','
+lines terminated by '\n'
+stored as textfile;
+
+LOAD DATA LOCAL INPATH '/home/hduser/hive/data/payments.txt' INTO TABLE payment_master;
+
+#Use case I:COLLECT_SET
+hive> select cid,COLLECT_SET(pcode) as pcode_As_set,sum(amount) from payment_master
+    > where cid in (103,112,114,119,121,124,128,129,131,141,144) group by cid;
+
+103     ["HQ336336","JM555205","OM314933"]      22314.36
+112     ["BO864823","HQ55022","ND748579"]       80180.98
+114     ["GG31455","MA765515","NP603840","NR27552"]     180585.06999999998
+119     ["DB933704","LN373447","NG94694"]       116949.68000000001
+121     ["DB889831","FD317790","KI831359","MA302151"]   104224.79
+124     ["AE215433","BG255406","CQ287967","ET64396","HI366474","HR86578","KI131716","LF217299","NT141748"]      584188.2400000001
+128     ["DI925118","FA465482","FH668230","IP383901"]   75937.76000000001
+129     ["DM826140","ID449593","PI42991"]       66710.56
+131     ["CL442705","MA724562","NB445135"]      107639.94
+141     ["AU364101","DB583216","DL460618","HJ32686","ID10962","IN446258","JE105477","JN355280","JN722010","KT52578","MC46946","MF629602","NU627706"]  715738.9800000001
+144     ["IR846303","LA685678"] 43680.65
+
+#Use case I:COLLECT_LIST
+hive> select cid,COLLECT_SET(bdate) as pcode_As_set,sum(amount) from payment_master
+where cid in (103,112,114,119,121,124,128,129,131,141,144) group by cid;
+
+103     ["2016-10-19","2016-10-05","2016-10-18"]        22314.36
+112     ["2016-10-17","2016-10-06","2016-10-20"]        80180.98
+114     ["2016-10-20","2016-10-15","2016-10-31","2016-10-10"]   180585.06999999998
+119     ["2016-10-14","2016-10-08","2016-10-22"]        116949.68000000001
+121     ["2016-10-16","2016-10-28","2016-10-04"]        104224.79
+124     ["2016-10-05","2016-10-28","2016-10-11","2016-10-16","2016-10-27","2016-10-02","2016-10-15","2016-10-26","2016-10-25"]        584188.2400000001
+128     ["2016-10-28","2016-10-18","2016-10-24"]        75937.76000000001
+129     ["2016-10-08","2016-10-11","2016-10-09"]        66710.56
+131     ["2016-10-12","2016-10-02","2016-10-11"]        107639.94
+141     ["2016-10-19","2016-10-01","2016-10-30","2016-10-31","2016-10-25","2016-10-18","2016-10-26","2016-10-09","2016-10-16","2016-10-17"]   715738.9800000001
+144     ["2016-10-12","2016-10-09"]     43680.65
+
+hive> select cid,COLLECT_LIST(bdate) as pcode_As_set,sum(amount) from payment_master
+where cid in (103,112,114,119,121,124,128,129,131,141,144) group by cid;
+
+103     ["2016-10-19","2016-10-05","2016-10-18"]        22314.36
+112     ["2016-10-17","2016-10-06","2016-10-20"]        80180.98
+114     ["2016-10-20","2016-10-15","2016-10-31","2016-10-10"]   180585.06999999998
+119     ["2016-10-14","2016-10-08","2016-10-22"]        116949.68000000001
+121     ["2016-10-16","2016-10-28","2016-10-04","2016-10-28"]   104224.79
+124     ["2016-10-05","2016-10-28","2016-10-11","2016-10-16","2016-10-27","2016-10-02","2016-10-15","2016-10-26","2016-10-25"]        584188.2400000001
+128     ["2016-10-28","2016-10-18","2016-10-24","2016-10-18"]   75937.76000000001
+129     ["2016-10-08","2016-10-11","2016-10-09"]        66710.56
+131     ["2016-10-12","2016-10-02","2016-10-11"]        107639.94
+141     ["2016-10-19","2016-10-01","2016-10-19","2016-10-30","2016-10-31","2016-10-25","2016-10-18","2016-10-26","2016-10-25","2016-10-09","2016-10-09","2016-10-16","2016-10-17"]    715738.9800000001
+144     ["2016-10-12","2016-10-09"]     43680.65
+
+
+#collect_set,avg,size,array_contains
+select cid,
+COLLECT_SET(pcode) as pcode_As_set,
+sum(amount),
+size(collect_set(pcode)) as total_pcode_count,
+array_contains(collect_set(bdate),'2016-10-18') as have_billed_on_1018 
+from payment_master where cid in (103,112,114,119,121,124,128,129,131,141,144) group by cid;
+
+103     ["HQ336336","JM555205","OM314933"]      22314.36        3       true
+112     ["BO864823","HQ55022","ND748579"]       80180.98        3       false
+114     ["GG31455","MA765515","NP603840","NR27552"]     180585.06999999998      4       false
+119     ["DB933704","LN373447","NG94694"]       116949.68000000001      3       false
+121     ["DB889831","FD317790","KI831359","MA302151"]   104224.79       4       false
+124     ["AE215433","BG255406","CQ287967","ET64396","HI366474","HR86578","KI131716","LF217299","NT141748"]      584188.2400000001     9       false
+128     ["DI925118","FA465482","FH668230","IP383901"]   75937.76000000001       4       true
+129     ["DM826140","ID449593","PI42991"]       66710.56        3       false
+131     ["CL442705","MA724562","NB445135"]      107639.94       3       false
+141     ["AU364101","DB583216","DL460618","HJ32686","ID10962","IN446258","JE105477","JN355280","JN722010","KT52578","MC46946","MF629602","NU627706"]  715738.9800000001       13      true
+144     ["IR846303","LA685678"] 43680.65        2       false
+Time taken: 19.978 seconds, Fetched: 11 row(s)
+
+
+select cid,
+sum(amount),
+case when size(collect_set(pcode)) > 3 then 'DiscountAllowed'
+else 'Discount NOT Allowed' end as DiscountStatus
+from payment_master where cid in (103,112,114,119,121,124,128,129,131,141,144) group by cid;
+
+103     22314.36        Discount NOT Allowed
+112     80180.98        Discount NOT Allowed
+114     180585.06999999998      DiscountAllowed
+119     116949.68000000001      Discount NOT Allowed
+121     104224.79       DiscountAllowed
+124     584188.2400000001       DiscountAllowed
+128     75937.76000000001       DiscountAllowed
+129     66710.56        Discount NOT Allowed
+131     107639.94       Discount NOT Allowed
+141     715738.9800000001       DiscountAllowed
+144     43680.65        Discount NOT Allowed
+Time taken: 19.036 seconds, Fetched: 11 row(s)
+
+select cid,
+cast(sum(amount) as decimal(19, 9)) as sumAmount,
+case when size(collect_set(pcode)) > 3 then 'DiscountAllowed'
+else 'Discount NOT Allowed' end as DiscountStatus
+from payment_master where cid in (103,112,114,119,121,124,128,129,131,141,144) group by cid;
+==============================================
+cid     sumamount       discountstatus
+==============================================
+103     22314.36        Discount NOT Allowed
+112     80180.98        Discount NOT Allowed
+114     180585.07       DiscountAllowed
+119     116949.68       Discount NOT Allowed
+121     104224.79       DiscountAllowed
+124     584188.24       DiscountAllowed
+128     75937.76        DiscountAllowed
+129     66710.56        Discount NOT Allowed
+131     107639.94       Discount NOT Allowed
+141     715738.98       DiscountAllowed
+144     43680.65        Discount NOT Allowed
+----------------------------------------------
+Time taken: 41.233 seconds, Fetched: 11 row(s)
+----------------------------------------------
+
+#Hbase timing check above same query.
+#1
+create 'payment_hbase','pmt'
+#2
+CREATE external TABLE payment_hive_ccollection(custno int,sumAmount double,DiscountStatus string)
+STORED BY 'org.apache.hadoop.hive.hbase.HBaseStorageHandler'
+WITH SERDEPROPERTIES ("hbase.columns.mapping" =
+":key,pmt:sumAmount,pmt:DiscountStatus")
+TBLPROPERTIES ("hbase.table.name" = "payment_hbase");
+#3.
+insert into payment_hive_ccollection select cid,
+cast(sum(amount) as decimal(19, 9)) as sumAmount,
+case when size(collect_set(pcode)) > 3 then 'DiscountAllowed'
+else 'Discount NOT Allowed' end as DiscountStatus
+from payment_master where cid in (103,112,114,119,121,124,128,129,131,141,144) group by cid;
+
+hbase(main):004:0> scan 'payment_hbase'
+ROW                         COLUMN+CELL
+ 103                        column=pmt:DiscountStatus, timestamp=1601804262875, value=Discount NOT Allowed
+ 103                        column=pmt:sumAmount, timestamp=1601804262875, value=22314.36
+ 112                        column=pmt:DiscountStatus, timestamp=1601804262875, value=Discount NOT Allowed
+ 112                        column=pmt:sumAmount, timestamp=1601804262875, value=80180.98
+ 114                        column=pmt:DiscountStatus, timestamp=1601804262875, value=DiscountAllowed
+ 114                        column=pmt:sumAmount, timestamp=1601804262875, value=180585.07
+ 119                        column=pmt:DiscountStatus, timestamp=1601804262875, value=Discount NOT Allowed
+ 119                        column=pmt:sumAmount, timestamp=1601804262875, value=116949.68
+ 121                        column=pmt:DiscountStatus, timestamp=1601804262875, value=DiscountAllowed
+ 121                        column=pmt:sumAmount, timestamp=1601804262875, value=104224.79
+ 124                        column=pmt:DiscountStatus, timestamp=1601804262875, value=DiscountAllowed
+ 124                        column=pmt:sumAmount, timestamp=1601804262875, value=584188.24
+ 128                        column=pmt:DiscountStatus, timestamp=1601804262875, value=DiscountAllowed
+ 128                        column=pmt:sumAmount, timestamp=1601804262875, value=75937.76
+ 129                        column=pmt:DiscountStatus, timestamp=1601804262875, value=Discount NOT Allowed
+ 129                        column=pmt:sumAmount, timestamp=1601804262875, value=66710.56
+ 131                        column=pmt:DiscountStatus, timestamp=1601804262875, value=Discount NOT Allowed
+ 131                        column=pmt:sumAmount, timestamp=1601804262875, value=107639.94
+ 141                        column=pmt:DiscountStatus, timestamp=1601804262875, value=DiscountAllowed
+ 141                        column=pmt:sumAmount, timestamp=1601804262875, value=715738.98
+ 144                        column=pmt:DiscountStatus, timestamp=1601804262875, value=Discount NOT Allowed
+ 144                        column=pmt:sumAmount, timestamp=1601804262875, value=43680.65
+-------------------------------
+11 row(s) in 0.0640 seconds
+-------------------------------
+---------------------------------------------------------------------------------------------------------------
+#named_struct()
+
+hive> select cid,named_struct('productcode',pcode,'billdate',bdate,'amount',amount)
+    > from payment_master where cid in (103,112,114,119,121,124,128,129,131,141,144);
+OK
+103     {"productcode":"HQ336336","billdate":"2016-10-19","amount":6066.78}
+103     {"productcode":"JM555205","billdate":"2016-10-05","amount":14571.44}
+103     {"productcode":"OM314933","billdate":"2016-10-18","amount":1676.14}
+112     {"productcode":"BO864823","billdate":"2016-10-17","amount":14191.12}
+112     {"productcode":"HQ55022","billdate":"2016-10-06","amount":32641.98}
+112     {"productcode":"ND748579","billdate":"2016-10-20","amount":33347.88}
+114     {"productcode":"GG31455","billdate":"2016-10-20","amount":45864.03}
+114     {"productcode":"MA765515","billdate":"2016-10-15","amount":82261.22}
+114     {"productcode":"NP603840","billdate":"2016-10-31","amount":7565.08}
+114     {"productcode":"NR27552","billdate":"2016-10-10","amount":44894.74}
+119     {"productcode":"DB933704","billdate":"2016-10-14","amount":19501.82}
+119     {"productcode":"LN373447","billdate":"2016-10-08","amount":47924.19}
+119     {"productcode":"NG94694","billdate":"2016-10-22","amount":49523.67}
+121     {"productcode":"DB889831","billdate":"2016-10-16","amount":50218.95}
+121     {"productcode":"FD317790","billdate":"2016-10-28","amount":1491.38}
+121     {"productcode":"KI831359","billdate":"2016-10-04","amount":17876.32}
+121     {"productcode":"MA302151","billdate":"2016-10-28","amount":34638.14}
+124     {"productcode":"AE215433","billdate":"2016-10-05","amount":101244.59}
+124     {"productcode":"BG255406","billdate":"2016-10-28","amount":85410.87}
+124     {"productcode":"CQ287967","billdate":"2016-10-11","amount":11044.3}
+124     {"productcode":"ET64396","billdate":"2016-10-16","amount":83598.04}
+124     {"productcode":"HI366474","billdate":"2016-10-27","amount":47142.7}
+124     {"productcode":"HR86578","billdate":"2016-10-02","amount":55639.66}
+124     {"productcode":"KI131716","billdate":"2016-10-15","amount":111654.4}
+124     {"productcode":"LF217299","billdate":"2016-10-26","amount":43369.3}
+124     {"productcode":"NT141748","billdate":"2016-10-25","amount":45084.38}
+128     {"productcode":"DI925118","billdate":"2016-10-28","amount":10549.01}
+128     {"productcode":"FA465482","billdate":"2016-10-18","amount":24101.81}
+128     {"productcode":"FH668230","billdate":"2016-10-24","amount":33820.62}
+128     {"productcode":"IP383901","billdate":"2016-10-18","amount":7466.32}
+129     {"productcode":"DM826140","billdate":"2016-10-08","amount":26248.78}
+129     {"productcode":"ID449593","billdate":"2016-10-11","amount":23923.93}
+129     {"productcode":"PI42991","billdate":"2016-10-09","amount":16537.85}
+131     {"productcode":"CL442705","billdate":"2016-10-12","amount":22292.62}
+131     {"productcode":"MA724562","billdate":"2016-10-02","amount":50025.35}
+131     {"productcode":"NB445135","billdate":"2016-10-11","amount":35321.97}
+141     {"productcode":"AU364101","billdate":"2016-10-19","amount":36251.03}
+141     {"productcode":"DB583216","billdate":"2016-10-01","amount":36140.38}
+141     {"productcode":"DL460618","billdate":"2016-10-19","amount":46895.48}
+141     {"productcode":"HJ32686","billdate":"2016-10-30","amount":59830.55}
+141     {"productcode":"ID10962","billdate":"2016-10-31","amount":116208.4}
+141     {"productcode":"IN446258","billdate":"2016-10-25","amount":65071.26}
+141     {"productcode":"JE105477","billdate":"2016-10-18","amount":120166.58}
+141     {"productcode":"JN355280","billdate":"2016-10-26","amount":49539.37}
+141     {"productcode":"JN722010","billdate":"2016-10-25","amount":40206.2}
+141     {"productcode":"KT52578","billdate":"2016-10-09","amount":63843.55}
+141     {"productcode":"MC46946","billdate":"2016-10-09","amount":35420.74}
+141     {"productcode":"MF629602","billdate":"2016-10-16","amount":20009.53}
+141     {"productcode":"NU627706","billdate":"2016-10-17","amount":26155.91}
+144     {"productcode":"IR846303","billdate":"2016-10-12","amount":36005.71}
+144     {"productcode":"LA685678","billdate":"2016-10-09","amount":7674.94}
+Time taken: 0.115 seconds, Fetched: 51 row(s)
+
+
+
+#Hbase timing check above same query.
+#1
+create 'payment_hbase2','prodbill'
+#2
+CREATE external TABLE payment_hive_namedstruct(custno int,billdetail struct<pcode:string,bdate:string>)
+STORED BY 'org.apache.hadoop.hive.hbase.HBaseStorageHandler'
+WITH SERDEPROPERTIES ("hbase.columns.mapping" =
+":key,prodbill:billdetail")
+TBLPROPERTIES ("hbase.table.name" = "payment_hbase2");
+#3.
+insert into payment_hive_namedstruct select cid,named_struct('pcode',pcode,'bdate',bdate)
+from payment_master where cid in (103,112,114,119,121,124,128,129,131,141,144);
+
+FAILED: SemanticException [Error 10044]: 
+Line 1:12 Cannot insert into target table because column number/types are different 'payment_hive_namedstruct': 
+Cannot convert column 1 from struct<productcode:string,billdate:string> to struct<pcode:string,bdate:string>.
+
+
+hive> select * from payment_hive_namedstruct;
+OK
+103     {"pcode":"OM314933","bdate":"2016-10-18"}
+112     {"pcode":"ND748579","bdate":"2016-10-20"}
+114     {"pcode":"NR27552","bdate":"2016-10-10"}
+119     {"pcode":"NG94694","bdate":"2016-10-22"}
+121     {"pcode":"MA302151","bdate":"2016-10-28"}
+124     {"pcode":"NT141748","bdate":"2016-10-25"}
+128     {"pcode":"IP383901","bdate":"2016-10-18"}
+129     {"pcode":"PI42991","bdate":"2016-10-09"}
+131     {"pcode":"NB445135","bdate":"2016-10-11"}
+141     {"pcode":"NU627706","bdate":"2016-10-17"}
+144     {"pcode":"LA685678","bdate":"2016-10-09"}
+Time taken: 0.12 seconds, Fetched: 11 row(s)
+
+hbase(main):001:0> scan 'payment_hbase2'
+ROW                                              COLUMN+CELL
+ 103                                             column=prodbill:billdetail, timestamp=1601810334607, value=OM314933\x022016-10-18
+ 112                                             column=prodbill:billdetail, timestamp=1601810334607, value=ND748579\x022016-10-20
+ 114                                             column=prodbill:billdetail, timestamp=1601810334607, value=NR27552\x022016-10-10
+ 119                                             column=prodbill:billdetail, timestamp=1601810334607, value=NG94694\x022016-10-22
+ 121                                             column=prodbill:billdetail, timestamp=1601810334607, value=MA302151\x022016-10-28
+ 124                                             column=prodbill:billdetail, timestamp=1601810334607, value=NT141748\x022016-10-25
+ 128                                             column=prodbill:billdetail, timestamp=1601810334607, value=IP383901\x022016-10-18
+ 129                                             column=prodbill:billdetail, timestamp=1601810334607, value=PI42991\x022016-10-09
+ 131                                             column=prodbill:billdetail, timestamp=1601810334607, value=NB445135\x022016-10-11
+ 141                                             column=prodbill:billdetail, timestamp=1601810334607, value=NU627706\x022016-10-17
+ 144                                             column=prodbill:billdetail, timestamp=1601810334607, value=LA685678\x022016-10-09
+11 row(s) in 0.2470 seconds
+
+
+cat /home/hduser/hive/data/agreement
+A101,Renganathan,Krishnamoorthy,34
+A101,Reyaansh,Renganathan,3
+A101,UdayaRekha,Renganathan,31
+A102,Bharath,Kumar,29
+A102,Leela,Krishna,53
+A102,Usha,Narayanan,48
+A103,Krishna,ayyavvu,64
+
+hive>create external table agreement(agr_id string,first_name string,last_name string,age int)
+row format delimited fields terminated by ','
+lines terminated by '\n'
+stored as textfile;
+
+LOAD DATA LOCAL INPATH '/home/hduser/hive/data/agreement' INTO TABLE agreement;
+
+select agr_id,named_struct('first_name',first_name,'last_name',last_name,'age',age) from agreement;
+A101    {"first_name":"Renganathan","last_name":"Krishnamoorthy","age":34}
+A101    {"first_name":"Reyaansh","last_name":"Renganathan","age":3}
+A101    {"first_name":"UdayaRekha","last_name":"Renganathan","age":31}
+A102    {"first_name":"Bharath","last_name":"Kumar","age":29}
+A102    {"first_name":"Leela","last_name":"Krishna","age":53}
+A102    {"first_name":"Usha","last_name":"Narayanan","age":48}
+A103    {"first_name":"Krishna","last_name":"ayyavvu","age":64}
+
+select agr_id,collect_list(age) from agreement group by agr_id;
+A101    [34,3,31]
+A102    [29,53,48]
+A103    [64]
+
+hive to hbase table.
+--------------------
+#1
+create 'agreement_hbase','bdetail'
+#2
+CREATE external TABLE agreement_hive_namedstruct(agr_id string,billdetail struct<first_name:string,last_name:string,age:int>)
+STORED BY 'org.apache.hadoop.hive.hbase.HBaseStorageHandler'
+WITH SERDEPROPERTIES ("hbase.columns.mapping" =
+":key,bdetail:billdetail")
+TBLPROPERTIES ("hbase.table.name" = "agreement_hbase");
+#3.
+insert into agreement_hive_namedstruct select agr_id,named_struct('first_name',first_name,'last_name',last_name,'age',age) from agreement;
+
+hbase(main):004:0> scan 'agreement_hbase'
+ROW                            COLUMN+CELL
+ A101                          column=bdetail:billdetail, timestamp=1601816453238, value=UdayaRekha\x02Renganathan\x0231
+ A102                          column=bdetail:billdetail, timestamp=1601816453238, value=Usha\x02Narayanan\x0248
+ A103                          column=bdetail:billdetail, timestamp=1601816453238, value=Krishna\x02ayyavvu\x0264
+3 row(s) in 0.0220 seconds
+
+
+hive> select * from agreement_hive_namedstruct; -- getting for Hbase
+OK
+A101    {"first_name":"UdayaRekha","last_name":"Renganathan","age":31}
+A102    {"first_name":"Usha","last_name":"Narayanan","age":48}
+A103    {"first_name":"Krishna","last_name":"ayyavvu","age":64}
+
+
+==========================================================================================================================================
